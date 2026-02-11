@@ -280,7 +280,7 @@ def process_data(main_plan_path, shop_plan_path, schedule_template_path, output_
             date_col_cleaned_name = None  # 存储清理后的名字 (MOCTA-CREATE-DATE)
 
             # 我们需要同时检查其他关键列
-            required_shop_cols = ['工单单号', '工单单别', '品号', '产品品号', '预交货日', 'PO号']  # 添加PO号
+            required_shop_cols = ['工单单号', '工单单别', '品号', '产品品号', '预交货日', '备注']  # 将PO号改为备注
             found_cols = set()
 
             all_cols_cleaned_for_debug = []
@@ -341,7 +341,8 @@ def process_data(main_plan_path, shop_plan_path, schedule_template_path, output_
             shop_plan_df['工单单别'] = shop_plan_df['工单单别'].astype(str).str.strip()
             shop_plan_df['品号'] = shop_plan_df['品号'].astype(str).str.strip()
             shop_plan_df['产品品号'] = shop_plan_df['产品品号'].astype(str).str.strip()
-            shop_plan_df['PO号'] = shop_plan_df['PO号'].astype(str).str.strip()  # 添加PO号处理
+            # shop_plan_df['PO号'] = shop_plan_df['PO号'].astype(str).str.strip()  # 注释掉这行或删除
+            shop_plan_df['备注'] = shop_plan_df['备注'].astype(str).str.strip()  # 添加备注列处理
 
         except Exception as e:
             if "File is not a zip file" in str(e):
@@ -363,12 +364,12 @@ def process_data(main_plan_path, shop_plan_path, schedule_template_path, output_
             f"INFO: (filter) 找到 {len(on_date_df)} 条当天工单, {len(after_date_df)} 条未来工单 (已过滤)。")
 
         wo_to_import_set = set()
-        on_date_wos = set(zip(shop_plan_df.loc[on_date_df.index, 'PO号'], shop_plan_df.loc[on_date_df.index, '工单单别']))  # 使用PO号替换工单单号
+        on_date_wos = set(zip(shop_plan_df.loc[on_date_df.index, '备注'], shop_plan_df.loc[on_date_df.index, '工单单别']))  # 使用备注列
         new_on_date_wos = on_date_wos - existing_wo_set
         wo_to_import_set.update(new_on_date_wos)
         log_messages.append(f"INFO: (filter) 筛选出 {len(new_on_date_wos)} 条当天 *新* 工单。")
 
-        after_date_wos = set(zip(shop_plan_df.loc[after_date_df.index, 'PO号'], shop_plan_df.loc[after_date_df.index, '工单单别']))  # 使用PO号替换工单单号after_date_wos = set(zip(shop_plan_df.loc[after_date_df.index, 'PO号'], shop_plan_df.loc[after_date_df.index, '工单单别']))  # 使用PO号替换工单单号
+        after_date_wos = set(zip(shop_plan_df.loc[after_date_df.index, '备注'], shop_plan_df.loc[after_date_df.index, '工单单别']))  # 使用备注列
         new_after_date_wos = after_date_wos - existing_wo_set
         wo_to_import_set.update(new_after_date_wos)
         log_messages.append(f"INFO: (filter) 添加 {len(new_after_date_wos)} 条未来 *新* 工单。")
@@ -380,7 +381,7 @@ def process_data(main_plan_path, shop_plan_path, schedule_template_path, output_
         log_messages.append(f"INFO: (filter) 总计 {len(wo_to_import_set)} 条唯一工单 (PO号, 单别) 待导入。")
 
         # --- 阶段二：获取输出数据 ---
-        shop_plan_df['temp_wo_key'] = list(zip(shop_plan_df['PO号'], shop_plan_df['工单单别']))  # 使用PO号替换工单单号
+        shop_plan_df['temp_wo_key'] = list(zip(shop_plan_df['备注'], shop_plan_df['工单单别']))  # 使用备注列
         data_to_export_df = shop_plan_df[shop_plan_df['temp_wo_key'].isin(wo_to_import_set)].copy()
 
         if data_to_export_df.empty:
@@ -471,6 +472,9 @@ def process_data(main_plan_path, shop_plan_path, schedule_template_path, output_
             '订单数量', '齐套率', '用户自定义字段7', '规格', '简称', '[品号分类三]', '审核码', 'MOCTA-CREATE-DATE',
             '要求物料到位时间'
         ]
+# 确保输出的 PO号 列使用 备注 列的数据
+if '备注' in result_df.columns:
+    result_df['PO号'] = result_df['备注']
         for col in final_column_order:
             if col not in output_df.columns:
                 output_df[col] = pd.NA
@@ -761,3 +765,4 @@ update_initial_log_message()
 
 
 root.mainloop()
+
