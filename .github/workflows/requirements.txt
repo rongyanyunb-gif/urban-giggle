@@ -1,3 +1,5 @@
 pandas
 openpyxl
 pywin32
+pyodbc
+tacalendar
