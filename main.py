@@ -271,16 +271,19 @@ def process_data(main_plan_path, shop_plan_path, schedule_template_path, output_
         try:
             shop_plan_df = pd.read_excel(shop_plan_path, engine='openpyxl', dtype={
                 '工单单号': str, '工单单别': str,
-                '品号': str, '产品品号': str, 'PO号': str  # 添加PO号列的数据类型
+                '品号': str, '产品品号': str, 'PO号': str,  # 原PO号列
+                '备注': str  # 读取备注列
             })
 
+            # 清理备注列，去除前后空格
+            shop_plan_df['备注'] = shop_plan_df['备注'].astype(str).str.strip()  # 去除前后空格
             # --- [V4.6 BUGFIX] ---
             # 迭代查找 date_col，绕过 'in' 检查的BUG
             date_col = None
             date_col_cleaned_name = None  # 存储清理后的名字 (MOCTA-CREATE-DATE)
 
             # 我们需要同时检查其他关键列
-            required_shop_cols = ['工单单号', '工单单别', '品号', '产品品号', '预交货日', '备注']  # 将PO号改为备注
+            required_shop_cols = ['工单单号', '工单单别', '品号', '产品品号', '预交货日', 'PO号']  # 添加PO号
             found_cols = set()
 
             all_cols_cleaned_for_debug = []
@@ -341,8 +344,7 @@ def process_data(main_plan_path, shop_plan_path, schedule_template_path, output_
             shop_plan_df['工单单别'] = shop_plan_df['工单单别'].astype(str).str.strip()
             shop_plan_df['品号'] = shop_plan_df['品号'].astype(str).str.strip()
             shop_plan_df['产品品号'] = shop_plan_df['产品品号'].astype(str).str.strip()
-            # shop_plan_df['PO号'] = shop_plan_df['PO号'].astype(str).str.strip()  # 注释掉这行或删除
-            shop_plan_df['备注'] = shop_plan_df['备注'].astype(str).str.strip()  # 添加备注列处理
+            shop_plan_df['PO号'] = shop_plan_df['PO号'].astype(str).str.strip()  # 添加PO号处理
 
         except Exception as e:
             if "File is not a zip file" in str(e):
@@ -364,12 +366,12 @@ def process_data(main_plan_path, shop_plan_path, schedule_template_path, output_
             f"INFO: (filter) 找到 {len(on_date_df)} 条当天工单, {len(after_date_df)} 条未来工单 (已过滤)。")
 
         wo_to_import_set = set()
-        on_date_wos = set(zip(shop_plan_df.loc[on_date_df.index, '备注'], shop_plan_df.loc[on_date_df.index, '工单单别']))  # 使用备注列
+        on_date_wos = set(zip(shop_plan_df.loc[on_date_df.index, 'PO号'], shop_plan_df.loc[on_date_df.index, '工单单别']))  # 使用PO号替换工单单号
         new_on_date_wos = on_date_wos - existing_wo_set
         wo_to_import_set.update(new_on_date_wos)
         log_messages.append(f"INFO: (filter) 筛选出 {len(new_on_date_wos)} 条当天 *新* 工单。")
 
-        after_date_wos = set(zip(shop_plan_df.loc[after_date_df.index, '备注'], shop_plan_df.loc[after_date_df.index, '工单单别']))  # 使用备注列
+        after_date_wos = set(zip(shop_plan_df.loc[after_date_df.index, 'PO号'], shop_plan_df.loc[after_date_df.index, '工单单别']))  # 使用PO号替换工单单号after_date_wos = set(zip(shop_plan_df.loc[after_date_df.index, 'PO号'], shop_plan_df.loc[after_date_df.index, '工单单别']))  # 使用PO号替换工单单号
         new_after_date_wos = after_date_wos - existing_wo_set
         wo_to_import_set.update(new_after_date_wos)
         log_messages.append(f"INFO: (filter) 添加 {len(new_after_date_wos)} 条未来 *新* 工单。")
@@ -381,7 +383,7 @@ def process_data(main_plan_path, shop_plan_path, schedule_template_path, output_
         log_messages.append(f"INFO: (filter) 总计 {len(wo_to_import_set)} 条唯一工单 (PO号, 单别) 待导入。")
 
         # --- 阶段二：获取输出数据 ---
-        shop_plan_df['temp_wo_key'] = list(zip(shop_plan_df['备注'], shop_plan_df['工单单别']))  # 使用备注列
+        shop_plan_df['temp_wo_key'] = list(zip(shop_plan_df['PO号'], shop_plan_df['工单单别']))  # 使用PO号替换工单单号
         data_to_export_df = shop_plan_df[shop_plan_df['temp_wo_key'].isin(wo_to_import_set)].copy()
 
         if data_to_export_df.empty:
@@ -441,13 +443,14 @@ def process_data(main_plan_path, shop_plan_path, schedule_template_path, output_
         output_df['已生产量_num'] = pd.to_numeric(output_df['已生产量'], errors='coerce').fillna(0)
         output_df['未生产量'] = output_df['预计产量_num'] - output_df['已生产量_num']
 
-        # 【修改】PO# 来源指定为新列：PO号 (订单号)
-        po_source_col = 'PO号 (订单号)'
+        # 修改为备注列
+        po_source_col = '备注'  # 假设备注列的名称是“备注”
         if po_source_col in output_df.columns:
+            # 将备注列的数据作为 PO号 输出
             output_df['订单PO#'] = output_df[po_source_col].astype(str).str.strip().replace('nan', '')
             log_messages.append(f"INFO: (PO来源) 已从 '{po_source_col}' 列成功获取PO#。")
         else:
-            # 回退到原逻辑（可选，用于兼容）
+            # 如果没有备注列，回退到原有的PO号来源逻辑
             log_messages.append(f"警告: (PO来源) 未找到列 '{po_source_col}'，尝试使用 '客户单号'。")
             if '客户单号' in output_df.columns:
                 output_df['订单PO#'] = output_df['客户单号'].astype(str).str.strip()
@@ -472,9 +475,6 @@ def process_data(main_plan_path, shop_plan_path, schedule_template_path, output_
             '订单数量', '齐套率', '用户自定义字段7', '规格', '简称', '[品号分类三]', '审核码', 'MOCTA-CREATE-DATE',
             '要求物料到位时间'
         ]
-# 确保输出的 PO号 列使用 备注 列的数据
-if '备注' in result_df.columns:
-    result_df['PO号'] = result_df['备注']
         for col in final_column_order:
             if col not in output_df.columns:
                 output_df[col] = pd.NA
@@ -762,7 +762,6 @@ initial_log_message_template = (
 )
 
 update_initial_log_message()
-
 
 root.mainloop()
 
