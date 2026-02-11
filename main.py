@@ -759,4 +759,5 @@ initial_log_message_template = (
 
 update_initial_log_message()
 
+
 root.mainloop()
